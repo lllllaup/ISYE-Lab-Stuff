@@ -22,7 +22,7 @@ def make_preference(
     
     rng = np.random.default_rng(seed)
 
-    mu_shared = make_zipf(n, zipf_s) #mainstream popularity: heavy-tailed
+    mu_shared = make_zipf(n, zipf_s) #mainstream popularity: h it's eavy-tailed
 
     #MAJORITY GROUP
     specific_M = rng.normal(loc=0, scale=1.0, size=n) #group-specific preference: normal distribution
@@ -88,7 +88,7 @@ def random_recommend_items(n_items, K, rng):
 def simulate_baseline(
     T=10_000, #number of time periods/users
     n_items=100,   #number of items
-    K=5,    #number of items recommended each time
+    K=5,    #number of items recommended each time #lower (try diff values)
     alpha=0.8,  #probality user is from majority group
     gamma=0.7,  #weight on shared mainstream popularity
     zipf_s=1.0, #zipf concentration of mainstream popularity
