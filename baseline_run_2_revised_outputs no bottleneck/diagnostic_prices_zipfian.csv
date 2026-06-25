@@ -1,0 +1,101 @@
+item,oracle_price,mle_price,item_type,abs_price_error
+0,1.118,1.055,Other items,0.06300000000000017
+1,0.553,1.558,Other items,1.005
+2,0.364,2.312,Other items,1.948
+3,0.301,2.123,Other items,1.8220000000000003
+4,0.238,2.5,Other items,2.262
+5,0.176,2.123,Other items,1.9470000000000003
+6,0.176,1.181,Other items,1.0050000000000001
+7,0.176,1.935,Other items,1.7590000000000001
+8,0.176,1.809,Other items,1.633
+9,0.176,1.495,Other items,1.3190000000000002
+10,0.176,0.301,Other items,0.125
+11,0.176,2.374,Other items,2.198
+12,0.176,1.935,Other items,1.7590000000000001
+13,0.176,0.678,Other items,0.502
+14,0.176,2.5,Other items,2.324
+15,0.113,1.746,Other items,1.633
+16,0.176,2.06,Other items,1.8840000000000001
+17,0.113,1.746,Other items,1.633
+18,0.176,0.05,Other items,0.126
+19,0.113,1.495,Other items,1.3820000000000001
+20,0.113,0.741,Other items,0.628
+21,0.113,0.741,Other items,0.628
+22,0.176,0.929,Other items,0.7530000000000001
+23,0.113,1.621,Other items,1.508
+24,0.113,1.558,Other items,1.445
+25,0.113,1.621,Other items,1.508
+26,0.113,2.186,Other items,2.073
+27,0.113,1.746,Other items,1.633
+28,0.113,2.437,Other items,2.324
+29,0.113,0.867,Other items,0.754
+30,0.176,1.369,Minority-preferred,1.193
+31,0.113,1.621,Other items,1.508
+32,0.113,1.369,Other items,1.256
+33,0.113,2.123,Other items,2.0100000000000002
+34,0.113,2.437,Other items,2.324
+35,0.113,1.746,Other items,1.633
+36,0.113,1.244,Other items,1.131
+37,0.113,1.432,Other items,1.319
+38,0.113,1.935,Other items,1.822
+39,0.113,1.244,Minority-preferred,1.131
+40,0.176,2.5,Minority-preferred,2.324
+41,0.113,1.997,Other items,1.8840000000000001
+42,0.113,1.997,Other items,1.8840000000000001
+43,0.113,1.935,Other items,1.822
+44,0.113,2.374,Other items,2.261
+45,0.113,2.06,Other items,1.947
+46,0.113,2.249,Other items,2.136
+47,0.176,1.683,Minority-preferred,1.5070000000000001
+48,0.678,2.312,Minority-preferred,1.634
+49,0.113,0.867,Other items,0.754
+50,0.992,1.809,Minority-preferred,0.817
+51,0.113,2.249,Other items,2.136
+52,0.113,1.055,Other items,0.942
+53,0.113,0.867,Other items,0.754
+54,0.113,2.437,Other items,2.324
+55,0.113,1.495,Other items,1.3820000000000001
+56,0.176,1.495,Minority-preferred,1.3190000000000002
+57,0.113,0.992,Minority-preferred,0.879
+58,0.113,1.495,Other items,1.3820000000000001
+59,0.176,0.992,Minority-preferred,0.8160000000000001
+60,0.113,0.867,Other items,0.754
+61,0.113,2.437,Minority-preferred,2.324
+62,0.113,1.306,Other items,1.193
+63,0.553,2.123,Minority-preferred,1.5700000000000003
+64,0.113,1.181,Other items,1.068
+65,0.113,1.683,Other items,1.57
+66,0.113,0.301,Other items,0.188
+67,0.113,1.746,Other items,1.633
+68,0.113,1.181,Other items,1.068
+69,0.113,1.306,Other items,1.193
+70,0.113,2.5,Other items,2.387
+71,0.113,2.5,Minority-preferred,2.387
+72,0.113,1.432,Minority-preferred,1.319
+73,0.113,2.123,Other items,2.0100000000000002
+74,0.176,1.997,Minority-preferred,1.8210000000000002
+75,0.113,0.867,Other items,0.754
+76,1.935,1.997,Minority-preferred,0.062000000000000055
+77,0.113,0.741,Minority-preferred,0.628
+78,0.113,2.249,Other items,2.136
+79,0.113,1.495,Other items,1.3820000000000001
+80,0.176,2.06,Minority-preferred,1.8840000000000001
+81,0.113,1.055,Other items,0.942
+82,0.176,2.249,Minority-preferred,2.073
+83,0.113,1.997,Other items,1.8840000000000001
+84,0.113,0.741,Other items,0.628
+85,0.113,0.804,Other items,0.6910000000000001
+86,0.113,2.249,Minority-preferred,2.136
+87,0.113,0.992,Other items,0.879
+88,0.113,2.374,Other items,2.261
+89,0.113,0.615,Other items,0.502
+90,0.427,1.746,Minority-preferred,1.319
+91,0.113,0.741,Other items,0.628
+92,0.113,2.123,Other items,2.0100000000000002
+93,0.113,0.553,Other items,0.44000000000000006
+94,0.113,1.683,Other items,1.57
+95,0.113,2.06,Other items,1.947
+96,0.113,2.123,Other items,2.0100000000000002
+97,0.113,1.621,Other items,1.508
+98,0.113,1.621,Other items,1.508
+99,0.113,2.374,Other items,2.261

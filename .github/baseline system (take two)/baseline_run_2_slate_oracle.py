@@ -253,22 +253,23 @@ def define_minority_preferred_items(mu_M, mu_m, specific_m, minority_top_quantil
 # Pricing functions
 # -----------------------------
 
-def oracle_q_j_p(j, p, mu_M, mu_m, alpha, noise_sd):
+def monopoly_oracle_q_j_p(j, p, mu_M, mu_m, alpha, noise_sd):
     """
-    True population-level purchase probability q_j(p).
+    Item-alone / monopoly demand benchmark.
 
-    This is the Oracle's magic power: it knows the actual data-generating process.
-
-        q_j(p) = alpha * Pr(v_Mj > p) + (1-alpha) * Pr(v_mj > p)
+    This is the OLD oracle logic: it assumes item j is offered by itself,
+    so the user buys whenever v_j > p. This is useful as a reference,
+    but it is not slate-aware.
     """
     q_M = normal_survival(p, mu_M[j], noise_sd)
     q_m = normal_survival(p, mu_m[j], noise_sd)
     return alpha * q_M + (1 - alpha) * q_m
 
 
-def oracle_prices(mu_M, mu_m, alpha, noise_sd, price_grid):
+def monopoly_oracle_prices(mu_M, mu_m, alpha, noise_sd, price_grid):
     """
-    For every item j, choose p_j^* = argmax_p p * q_j(p).
+    OLD item-level oracle: for every item j, choose p_j^* = argmax_p p * Pr(v_j > p).
+    Kept only as a diagnostic / benchmark.
     """
     n_items = len(mu_M)
     best_prices = np.zeros(n_items)
@@ -276,7 +277,7 @@ def oracle_prices(mu_M, mu_m, alpha, noise_sd, price_grid):
     q_at_best = np.zeros(n_items)
 
     for j in range(n_items):
-        q_vals = np.array([oracle_q_j_p(j, p, mu_M, mu_m, alpha, noise_sd) for p in price_grid])
+        q_vals = np.array([monopoly_oracle_q_j_p(j, p, mu_M, mu_m, alpha, noise_sd) for p in price_grid])
         expected_revenue = price_grid * q_vals
         best_k = int(np.argmax(expected_revenue))
         best_prices[j] = price_grid[best_k]
@@ -284,6 +285,161 @@ def oracle_prices(mu_M, mu_m, alpha, noise_sd, price_grid):
         q_at_best[j] = q_vals[best_k]
 
     return best_prices, best_revenues, q_at_best
+
+
+# Backward-compatible aliases so old plotting code still runs.
+oracle_q_j_p = monopoly_oracle_q_j_p
+oracle_prices = monopoly_oracle_prices
+
+
+def _draw_population_values_for_slate(recommended_items, mu_M, mu_m, alpha, noise_sd, n_draws, rng):
+    """
+    Draw values for exactly the items in one slate from the true population.
+    This is used by the slate-aware oracle.
+    """
+    recommended_items = np.asarray(recommended_items, dtype=int)
+    is_majority = rng.random(n_draws) < alpha
+
+    means_M = mu_M[recommended_items]
+    means_m = mu_m[recommended_items]
+    means = np.where(is_majority[:, None], means_M[None, :], means_m[None, :])
+
+    values = rng.normal(loc=means, scale=noise_sd)
+    values = np.maximum(values, 0.0)
+    return values
+
+
+def _expected_slate_revenue_from_prices(values, prices):
+    """
+    Expected revenue under the same competitive slate choice rule used in the simulation:
+    user buys the item with the highest positive v_j - p_j, otherwise buys nothing.
+    """
+    prices = np.asarray(prices, dtype=float)
+    utilities = values - prices[None, :]
+    best_pos = np.argmax(utilities, axis=1)
+    best_utility = utilities[np.arange(values.shape[0]), best_pos]
+    bought = best_utility > 0
+    revenue = np.where(bought, prices[best_pos], 0.0)
+    return float(np.mean(revenue))
+
+
+def slate_oracle_prices_for_slate(
+    recommended_items,
+    mu_M,
+    mu_m,
+    alpha,
+    noise_sd,
+    price_grid,
+    rng,
+    initial_prices=None,
+    n_draws=500,
+    coordinate_passes=2,
+):
+    """
+    Slate-aware oracle pricing for the exact K recommended items.
+
+    Unlike the monopoly oracle, this benchmark uses the same competitive choice rule
+    as the simulation: the user compares all K shown items and buys the best positive
+    utility item.
+
+    We approximate expected revenue with Monte Carlo draws and use coordinate search
+    over the price grid. This is not a full brute-force search over 40^K combinations,
+    but it is much closer to the simulation than Pr(v_j > p_j).
+    """
+    recommended_items = np.asarray(recommended_items, dtype=int)
+    price_grid = np.asarray(price_grid, dtype=float)
+    K = len(recommended_items)
+
+    values = _draw_population_values_for_slate(
+        recommended_items=recommended_items,
+        mu_M=mu_M,
+        mu_m=mu_m,
+        alpha=alpha,
+        noise_sd=noise_sd,
+        n_draws=n_draws,
+        rng=rng,
+    )
+
+    if initial_prices is None:
+        # Use the middle of the grid as a neutral default. The caller can also pass
+        # monopoly oracle prices as a warmer start.
+        current_indices = np.full(K, len(price_grid) // 2, dtype=int)
+    else:
+        current_indices = np.array([int(np.argmin(np.abs(price_grid - p))) for p in initial_prices], dtype=int)
+
+    current_prices = price_grid[current_indices].copy()
+
+    for _ in range(coordinate_passes):
+        for pos in range(K):
+            best_idx = int(current_indices[pos])
+            best_revenue = -np.inf
+
+            for candidate_idx, candidate_price in enumerate(price_grid):
+                candidate_prices = current_prices.copy()
+                candidate_prices[pos] = candidate_price
+                candidate_revenue = _expected_slate_revenue_from_prices(values, candidate_prices)
+
+                if candidate_revenue > best_revenue:
+                    best_revenue = candidate_revenue
+                    best_idx = int(candidate_idx)
+
+            current_indices[pos] = best_idx
+            current_prices[pos] = price_grid[best_idx]
+
+    final_revenue = _expected_slate_revenue_from_prices(values, current_prices)
+    return current_prices, current_indices, final_revenue
+
+
+def estimate_competitive_oracle_item_prices(
+    mu_M,
+    mu_m,
+    alpha,
+    noise_sd,
+    price_grid,
+    K,
+    rng,
+    monopoly_price_by_item=None,
+    n_slate_samples=250,
+    n_draws=300,
+    coordinate_passes=2,
+):
+    """
+    Approximate an item-level competitive oracle price for diagnostics.
+
+    A true slate-aware oracle price depends on the other items in the slate, so there is
+    no single universal oracle price per item. For plotting MLE-vs-oracle diagnostics,
+    we sample random slates, compute the slate-aware oracle price for each slate, and
+    average the oracle price assigned to each item when it appears.
+    """
+    n_items = len(mu_M)
+    price_sums = np.zeros(n_items, dtype=float)
+    counts = np.zeros(n_items, dtype=float)
+
+    if monopoly_price_by_item is None:
+        monopoly_price_by_item, _, _ = monopoly_oracle_prices(mu_M, mu_m, alpha, noise_sd, price_grid)
+
+    for _ in range(n_slate_samples):
+        slate = rng.choice(np.arange(n_items), size=K, replace=False)
+        initial_prices = monopoly_price_by_item[slate]
+        prices, _, _ = slate_oracle_prices_for_slate(
+            recommended_items=slate,
+            mu_M=mu_M,
+            mu_m=mu_m,
+            alpha=alpha,
+            noise_sd=noise_sd,
+            price_grid=price_grid,
+            rng=rng,
+            initial_prices=initial_prices,
+            n_draws=n_draws,
+            coordinate_passes=coordinate_passes,
+        )
+        price_sums[slate] += prices
+        counts[slate] += 1
+
+    competitive_prices = monopoly_price_by_item.copy()
+    observed = counts > 0
+    competitive_prices[observed] = price_sums[observed] / counts[observed]
+    return competitive_prices, counts
 
 
 def mle_price_indices(
@@ -385,13 +541,19 @@ def simulate_baseline_run_2(
     min_exposures_per_price=1,
     unseen_price_policy="ignore",
     price_explore_random=True,
+    epsilon_price=0.05,
+    oracle_type="slate",
+    slate_oracle_mc=500,
+    slate_oracle_passes=2,
 ):
     """
     baseline simulation (Well the take two(maybe three) of it)
 
     pricing_model:
         fixed  = old baseline, price is fixed for all items.
-        oracle = knows true q_j(p), uses mathematically best item price.
+        oracle = knows the true value distributions. By default this is a slate-aware
+                 competitive oracle, so it prices the exact K-item slate using the
+                 same argmax utility purchase rule as the simulation.
         mle    = learns q_hat_j,t(p) from exposures/purchases and prices from that.
 
     preference_model:
@@ -432,14 +594,22 @@ def simulate_baseline_run_2(
     # Keeping this name bc it matches the old code and the theory notes
     R = np.zeros(n_items)
 
-    # Oracle benchmark prices / true expected revenue if shown
-    oracle_price_by_item, oracle_r_star_by_item, oracle_q_at_best = oracle_prices(
+    # Monopoly / item-alone oracle benchmark. Kept for diagnostics and as a warm start.
+    # The actual pricing_model="oracle" branch below can use a slate-aware oracle.
+    monopoly_oracle_price_by_item, monopoly_oracle_r_star_by_item, monopoly_oracle_q_at_best = monopoly_oracle_prices(
         mu_M=mu_M,
         mu_m=mu_m,
         alpha=alpha,
         noise_sd=noise_sd,
         price_grid=price_grid,
     )
+
+    # Backward-compatible names used elsewhere in the code. If oracle_type="slate",
+    # these are NOT the prices shown by the oracle run; they are the old item-alone
+    # benchmark used for reference.
+    oracle_price_by_item = monopoly_oracle_price_by_item
+    oracle_r_star_by_item = monopoly_oracle_r_star_by_item
+    oracle_q_at_best = monopoly_oracle_q_at_best
 
     # MLE historical tables: exposures for each item-price pair.
     exposures = np.zeros((n_items, len(price_grid)))
@@ -474,10 +644,29 @@ def simulate_baseline_run_2(
             ])
 
         elif pricing_model == "oracle":
-            shown_prices = oracle_price_by_item[recommended_items]
-            shown_price_indices = np.array([
-                int(np.argmin(np.abs(price_grid - p))) for p in shown_prices
-            ])
+            if oracle_type == "slate":
+                # Slate-aware oracle: price the exact K-item slate using the same
+                # competitive argmax utility choice rule as the simulation.
+                shown_prices, shown_price_indices, slate_oracle_expected_revenue = slate_oracle_prices_for_slate(
+                    recommended_items=recommended_items,
+                    mu_M=mu_M,
+                    mu_m=mu_m,
+                    alpha=alpha,
+                    noise_sd=noise_sd,
+                    price_grid=price_grid,
+                    rng=rng,
+                    initial_prices=monopoly_oracle_price_by_item[recommended_items],
+                    n_draws=slate_oracle_mc,
+                    coordinate_passes=slate_oracle_passes,
+                )
+            elif oracle_type == "monopoly":
+                # Old oracle: item-alone price based on Pr(v_j > p_j).
+                shown_prices = monopoly_oracle_price_by_item[recommended_items]
+                shown_price_indices = np.array([
+                    int(np.argmin(np.abs(price_grid - p))) for p in shown_prices
+                ])
+            else:
+                raise ValueError("oracle_type must be 'slate' or 'monopoly'.")
 
         elif pricing_model == "mle":
             if t < T_explore and price_explore_random:
@@ -494,7 +683,15 @@ def simulate_baseline_run_2(
                     default_price=price,
                     unseen_price_policy=unseen_price_policy,
                 )
-                shown_price_indices = best_price_indices[recommended_items]
+                # Mostly greedy MLE pricing, but keep a small amount of price exploration alive
+                # so unseen prices are not permanently banned after T_explore.
+                shown_price_indices = []
+                for item in recommended_items:
+                    if rng.random() < epsilon_price:
+                        shown_price_indices.append(rng.choice(len(price_grid)))
+                    else:
+                        shown_price_indices.append(best_price_indices[item])
+                shown_price_indices = np.array(shown_price_indices, dtype=int)
 
             shown_prices = price_grid[shown_price_indices]
 
@@ -547,8 +744,12 @@ def simulate_baseline_run_2(
         max_recommended_value = float(values[recommended_items].max())
 
         avg_shown_price = float(np.mean(shown_prices))
-        avg_oracle_price_for_shown = float(np.mean(oracle_price_by_item[recommended_items]))
-        avg_oracle_r_star_for_shown = float(np.mean(oracle_r_star_by_item[recommended_items]))
+        avg_monopoly_oracle_price_for_shown = float(np.mean(monopoly_oracle_price_by_item[recommended_items]))
+        avg_monopoly_oracle_r_star_for_shown = float(np.mean(monopoly_oracle_r_star_by_item[recommended_items]))
+
+        # For oracle runs, this is the average actual oracle price shown. For fixed/MLE,
+        # it is left as NaN because a slate-aware oracle price depends on the exact slate.
+        avg_slate_oracle_price_for_shown = float(np.mean(shown_prices)) if pricing_model == "oracle" and oracle_type == "slate" else np.nan
 
         minority_items_shown = minority_preferred_items[recommended_items]
         if minority_items_shown.sum() > 0:
@@ -573,8 +774,9 @@ def simulate_baseline_run_2(
             "avg_recommended_value": avg_recommended_value,
             "max_recommended_value": max_recommended_value,
             "avg_shown_price": avg_shown_price,
-            "avg_oracle_price_for_shown": avg_oracle_price_for_shown,
-            "avg_oracle_r_star_for_shown": avg_oracle_r_star_for_shown,
+            "avg_monopoly_oracle_price_for_shown": avg_monopoly_oracle_price_for_shown,
+            "avg_monopoly_oracle_r_star_for_shown": avg_monopoly_oracle_r_star_for_shown,
+            "avg_slate_oracle_price_for_shown": avg_slate_oracle_price_for_shown,
             "avg_price_minority_items_shown": avg_price_minority_items_shown,
             "minority_user": int(group == "m"),
             "majority_user": int(group == "M"),
@@ -602,9 +804,12 @@ def simulate_baseline_run_2(
         "minority_preferred_items": minority_preferred_items,
         "final_revenue_scores": R,
         "price_grid": price_grid,
-        "oracle_price_by_item": oracle_price_by_item,
+        "oracle_price_by_item": oracle_price_by_item,  # backward-compatible: monopoly/item-alone benchmark
         "oracle_r_star_by_item": oracle_r_star_by_item,
         "oracle_q_at_best": oracle_q_at_best,
+        "monopoly_oracle_price_by_item": monopoly_oracle_price_by_item,
+        "monopoly_oracle_r_star_by_item": monopoly_oracle_r_star_by_item,
+        "monopoly_oracle_q_at_best": monopoly_oracle_q_at_best,
         "mle_exposures": exposures,
         "mle_purchases": purchases,
         "final_mle_prices": final_mle_prices,
@@ -630,6 +835,10 @@ def simulate_baseline_run_2(
             "prior_trials": prior_trials,
             "min_exposures_per_price": min_exposures_per_price,
             "unseen_price_policy": unseen_price_policy,
+            "epsilon_price": epsilon_price,
+            "oracle_type": oracle_type,
+            "slate_oracle_mc": slate_oracle_mc,
+            "slate_oracle_passes": slate_oracle_passes,
         }
     }
 
@@ -771,7 +980,7 @@ def compute_pricing_diagnostics(metadata):
     For fixed/oracle runs, final_mle_prices still exists but isn't meaningful unless pricing_model=mle.
     """
     minority_items = metadata["minority_preferred_items"]
-    oracle_prices_j = metadata["oracle_price_by_item"]
+    oracle_prices_j = metadata.get("competitive_oracle_price_by_item", metadata["oracle_price_by_item"])
     oracle_r_star_j = metadata["oracle_r_star_by_item"]
     mle_prices_j = metadata["final_mle_prices"]
     exposures = metadata["mle_exposures"]
@@ -1026,7 +1235,8 @@ def save_oracle_vs_mle_revenue_plot(
         subtitle=(
             f"Same setup: T={T}, K={K}, alpha={alpha}, gamma={gamma}, "
             f"delta={delta}, lambda={lambda_}. "
-            f"Oracle knows true demand; MLE estimates demand from historical exposures and purchases."
+            f"Oracle is slate-aware and uses the same competitive argmax choice rule as the simulation; "
+            f"MLE estimates demand from historical exposures and purchases."
         ),
     )
 
@@ -1054,6 +1264,8 @@ def save_mle_vs_oracle_price_diagnostic(
     delta=0.99,
     lambda_=0.1,
     seed=42,
+    competitive_oracle_slate_samples=250,
+    competitive_oracle_mc=300,
 ):
     """
     Compare final MLE prices vs Oracle prices item-by-item.
@@ -1078,31 +1290,49 @@ def save_mle_vs_oracle_price_diagnostic(
     )
 
     minority_items = metadata["minority_preferred_items"]
-    oracle_prices_j = metadata["oracle_price_by_item"]
     mle_prices_j = metadata["final_mle_prices"]
+
+    # A true slate-aware oracle price depends on the other K-1 items shown with it.
+    # For item-level diagnostics, approximate each item's competitive-oracle benchmark
+    # by averaging over random slates that include that item.
+    diagnostic_rng = np.random.default_rng(seed + 999)
+    oracle_prices_j, oracle_slate_counts = estimate_competitive_oracle_item_prices(
+        mu_M=metadata["preferences"]["mu_M"],
+        mu_m=metadata["preferences"]["mu_m"],
+        alpha=alpha,
+        noise_sd=metadata["preferences"]["noise_sd"],
+        price_grid=metadata["price_grid"],
+        K=K,
+        rng=diagnostic_rng,
+        monopoly_price_by_item=metadata["monopoly_oracle_price_by_item"],
+        n_slate_samples=competitive_oracle_slate_samples,
+        n_draws=competitive_oracle_mc,
+        coordinate_passes=2,
+    )
 
     price_df = pd.DataFrame({
         "item": np.arange(n_items),
-        "oracle_price": oracle_prices_j,
+        "competitive_oracle_price": oracle_prices_j,
+        "oracle_slate_count": oracle_slate_counts,
         "mle_price": mle_prices_j,
         "item_type": np.where(minority_items, "Minority-preferred", "Other items"),
     })
 
-    price_df["abs_price_error"] = np.abs(price_df["mle_price"] - price_df["oracle_price"])
+    price_df["abs_price_gap"] = np.abs(price_df["mle_price"] - price_df["competitive_oracle_price"])
 
     # Scatter: item-by-item price comparison
     plt.figure(figsize=(8, 6))
     sns.scatterplot(
         data=price_df,
-        x="oracle_price",
+        x="competitive_oracle_price",
         y="mle_price",
         hue="item_type",
         alpha=0.75,
     )
-    max_price = max(price_df["oracle_price"].max(), price_df["mle_price"].max())
+    max_price = max(price_df["competitive_oracle_price"].max(), price_df["mle_price"].max())    
     plt.plot([0, max_price], [0, max_price], linestyle="--")
-    plt.title(f"Final MLE prices vs Oracle prices ({preference_model})")
-    plt.xlabel("Oracle price")
+    plt.title(f"Final MLE prices vs slate-aware Oracle prices ({preference_model})")
+    plt.xlabel("Slate-aware Oracle price")
     plt.ylabel("Final MLE price")
     plt.tight_layout()
     plt.savefig(
@@ -1116,12 +1346,12 @@ def save_mle_vs_oracle_price_diagnostic(
     sns.barplot(
         data=price_df,
         x="item_type",
-        y="abs_price_error",
+        y="abs_price_gap",
         errorbar="se",
     )
-    plt.title(f"MLE price error by item type ({preference_model})")
+    plt.title(f"MLE vs slate-aware Oracle price gap by item type ({preference_model})")
     plt.xlabel("Item type")
-    plt.ylabel("Absolute price error")
+    plt.ylabel("Absolute price gap")
     plt.tight_layout()
     plt.savefig(
         os.path.join(output_dir, f"diagnostic_mle_price_error_by_item_type_{preference_model}.png"),
@@ -1285,7 +1515,7 @@ def save_grid_plots(grid_results, output_dir):
 # where the magic happens
 
 def main():
-    output_dir = "baseline_run_2_revised_outputs"
+    output_dir = "baseline_run_2_revised_outputs_slate_oracle"
     os.makedirs(output_dir, exist_ok=True)
 
     # Smaller T than the old 10,000 so it runs faster while testing.
